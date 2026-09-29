@@ -1,0 +1,433 @@
+# convert metaphaln abundance to gtdbdk named abundance file using metaphlan script
+# now at species level we need to either build metabolic models or match it to already built metabolic models (the built metabolic models are part of the micom db which we will use)
+#the following script is @species level
+#uhgg gapseq is chosen given that these are gut fecal sample (agora2 could/should be checked to see if nomenclature resulting in a mapping issue)
+#given that its gtdbdk that we have employed we have chosen  uhgg gtdbdk species mapping file from zenodo (427mb)
+########################################
+#step 1: we will need to build the manifest file which will serve as the input for the grow.py script (to get community growth)
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat makingspeciesinput.py
+import pandas as pd
+
+df = pd.read_csv(
+    "merged_metaphlan_gtdb.tsv",
+    sep="\t",
+    skiprows=1
+)
+
+# Keep only rows ending at species level
+species = df[
+    df["clade_name"].str.match(
+        r".*;g__[^;]+;s__[^;]+$",
+        na=False
+    )
+].copy()
+
+# Extract genus
+species["genus"] = species["clade_name"].str.extract(
+    r";g__([^;]+);s__"
+)
+
+# Extract species
+species["species"] = species["clade_name"].str.extract(
+    r";s__([^;]+)$"
+)
+
+# Wide -> long
+micom = species.melt(
+    id_vars=["clade_name", "genus", "species"],
+    var_name="sample_id",
+    value_name="abundance"
+)
+
+# Percent -> fraction
+micom["abundance"] = (
+    pd.to_numeric(
+        micom["abundance"],
+        errors="coerce"
+    ) / 100
+)
+
+# Remove zero / NA
+micom = micom[
+    micom["abundance"].notna() &
+    (micom["abundance"] > 0)
+].copy()
+
+# 0.1% cutoff
+micom = micom[
+    micom["abundance"] >= 0.001
+].copy()
+
+# Species-level MICOM ID
+micom["id"] = micom["species"]
+
+micom = micom[
+    ["sample_id", "id", "genus", "species", "abundance"]
+]
+
+micom.to_csv(
+    "micom_UHGG_GTDB_species.csv",
+    index=False
+)
+
+print(micom.head())
+
+print(
+    "Duplicates:",
+    micom.duplicated(
+        ["sample_id", "id"]
+    ).sum()
+)
+
+print(
+    "Samples:",
+    micom["sample_id"].nunique()
+)
+
+print(
+    "Species:",
+    micom["species"].nunique()
+)
+
+print(
+    micom.groupby("sample_id")["abundance"]
+    .sum()
+    .describe()
+)
+##################################################
+##################################################
+# after this we execute the grow.py script
+import pandas as pd
+from micom.workflows import build
+
+
+def main():
+
+    taxonomy = pd.read_csv(
+        "micom_UHGG_GTDB_species.csv"
+    )
+
+    print("Input table:")
+    print(taxonomy.head())
+
+    print("\nNumber of samples:")
+    print(taxonomy["sample_id"].nunique())
+
+    print("\nNumber of species:")
+    print(taxonomy["species"].nunique())
+
+    manifest = build(
+        taxonomy=taxonomy,
+        model_db="/work/mccoy_lab/ramya_pd/databases/micom/uhgg201_gtdb207_species_1.qza",
+        out_folder="micom_UHGG_species_communities",
+        cutoff=0.001,
+        threads=1
+    )
+
+    manifest.to_csv(
+        "micom_UHGG_species_manifest.csv",
+        index=False
+    )
+
+    print("\nMICOM build completed.")
+    print("\nManifest:")
+    print(manifest)
+
+
+if __name__ == "__main__":
+    main()
+#######################################
+#######################################
+#now we are also to check if the manifest files resulted in any duplicates (given the t__ scores of metaphaln it might have resulted in duplication)
+import pandas as pd
+
+df = pd.read_csv(
+    "merged_metaphlan_gtdb.tsv",
+    sep="\t",
+    skiprows=1
+)
+
+# Keep only rows ending at species level
+species = df[
+    df["clade_name"].str.match(
+        r".*;g__[^;]+;s__[^;]+$",
+        na=False
+    )
+].copy()
+
+# Extract genus
+species["genus"] = species["clade_name"].str.extract(
+    r";g__([^;]+);s__"
+)
+
+# Extract species
+species["species"] = species["clade_name"].str.extract(
+    r";s__([^;]+)$"
+)
+
+# Wide -> long
+micom = species.melt(
+    id_vars=["clade_name", "genus", "species"],
+    var_name="sample_id",
+    value_name="abundance"
+)
+
+# Percent -> fraction
+micom["abundance"] = (
+    pd.to_numeric(
+        micom["abundance"],
+        errors="coerce"
+    ) / 100
+)
+
+# Remove zero / NA
+micom = micom[
+    micom["abundance"].notna() &
+    (micom["abundance"] > 0)
+].copy()
+
+# 0.1% cutoff
+micom = micom[
+    micom["abundance"] >= 0.001
+].copy()
+
+# Species-level MICOM ID
+micom["id"] = micom["species"]
+
+micom = micom[
+    ["sample_id", "id", "genus", "species", "abundance"]
+]
+
+micom.to_csv(
+    "micom_UHGG_GTDB_species.csv",
+    index=False
+)
+
+print(micom.head())
+
+print(
+    "Duplicates:",
+    micom.duplicated(
+        ["sample_id", "id"]
+    ).sum()
+)
+
+print(
+    "Samples:",
+    micom["sample_id"].nunique()
+)
+
+print(
+    "Species:",
+    micom["species"].nunique()
+)
+
+print(
+    micom.groupby("sample_id")["abundance"]
+    .sum()
+    .describe()
+)
+#####################################
+#####################################
+# now we will build the community growth profile
+##this is done using gut media
+# we have employed pFBA of 0.5 S.BEDOUI AND S.FOSTER
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat grow_elinav.py
+import pandas as pd
+from micom.workflows import grow
+
+
+def main():
+
+    # Load MICOM manifest
+    manifest = pd.read_csv(
+        "elinav_micom_UHGG_genus_manifest.csv"
+    )
+
+    # Load gapseq gut medium
+    gut = pd.read_csv(
+        "/work/mccoy_lab/ramya_pd/software/gapseq/dat/media/gut.csv"
+    )
+
+    # Convert gapseq compound IDs to UHGG MICOM exchange IDs
+    medium = pd.DataFrame({
+        "reaction": "EX_" + gut["compounds"] + "_m",
+        "flux": gut["maxFlux"]
+    })
+
+    medium.index = medium["reaction"]
+
+    print(medium.head())
+
+    # Run cooperative tradeoff growth
+    results = grow(
+        manifest,
+        model_folder="elinav_micom_UHGG_genus_communities",
+        medium=medium,
+        tradeoff=0.5,strategy="pFBA",
+        threads=8
+    )
+
+    # Save taxon growth rates
+    results.growth_rates.to_csv(
+        "micom_gut_growth_rates_pfba.csv",
+        index=False
+    )
+
+    # Save metabolite exchange fluxes
+    results.exchanges.to_csv(
+        "micom_gut_exchanges_pfba.csv",
+        index=False
+    )
+
+    # Save metabolite annotations
+    results.annotations.to_csv(
+        "micom_gut_annotations_pfba.csv",
+        index=False
+    )
+
+
+if __name__ == "__main__":
+    main()
+####################################
+####################################
+####################################
+#following script is used to determine the number of taxa that failed the growth script
+# we are skipping these "problematic taxa" for now
+#the code below helps us identify the failed taxa
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat  failed_taxa_elinav.py
+from micom.workflows import load_results
+from micom.interaction import interactions
+
+
+def main():
+
+    results = load_results(
+        "micom_gut_results_pfba_elinav.zip"
+    )
+
+    taxa = (
+        results.growth_rates["taxon"]
+        .dropna()
+        .unique()
+    )
+
+    failed = []
+
+    print("Number of taxa:", len(taxa))
+
+    for taxon in taxa:
+
+        print("Testing:", taxon)
+
+        try:
+            x = interactions(
+                results,
+                taxa=[taxon],
+                threads=1
+            )
+
+            print("  OK", x.shape)
+
+        except Exception as e:
+
+            print("  FAILED", repr(e))
+            failed.append(taxon)
+
+    print("\nFailed taxa:")
+    for t in failed:
+        print(t)
+
+
+if __name__ == "__main__":
+    main()
+###########################
+###########################
+#the failed taxa are skipped for the interaction step with the following script as they could not be constructed into models
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat interaction_excluding_failed_taxa_elinav.py
+from micom.workflows import load_results
+from micom.interaction import interactions, summarize_interactions
+
+
+def main():
+
+    results = load_results(
+        "micom_gut_results_pfba_elinav.zip"
+    )
+
+    taxa = (
+        results.growth_rates["taxon"]
+        .dropna()
+        .unique()
+    )
+
+    failed_taxa = [
+        "Enterococcus_B",
+        "Parabacteroides",
+        "COE1",
+        "Methanosphaera",
+        "Aeromonas",
+        "Methanomassiliicoccus_A",
+        "CAG_307"
+    ]
+
+    taxa_keep = [
+        t for t in taxa
+        if t not in failed_taxa
+    ]
+
+    print("Total taxa:", len(taxa))
+    print("Taxa retained:", len(taxa_keep))
+    print("Taxa excluded:", len(failed_taxa))
+
+    # Calculate interactions
+    full = interactions(
+        results,
+        taxa=taxa_keep,
+        threads=8
+    )
+
+    print(full.shape)
+    print(full.head())
+
+    # Save full metabolite-level interactions
+    full.to_csv(
+        "micom_all_interactions_pfba_elinav.csv",
+        index=False
+    )
+
+    # Summarize focal-partner interactions
+    summary = summarize_interactions(full)
+
+    print(summary.shape)
+    print(summary.head())
+
+    summary.to_csv(
+        "micom_interactions_summary_pfba_elinav.csv",
+        index=False
+    )
+
+
+if __name__ == "__main__":
+    main()
+#####################
+#####################
+#final script for MES construction
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat mes.py
+from micom.workflows import load_results
+from micom.interaction import MES
+
+
+results = load_results(
+    "micom_gut_results_pfba.zip"
+)
+
+scores = MES(results)
+
+print(scores.head())
+print(scores.shape)
+
+scores.to_csv(
+    "micom_MES_pfba.csv",
+    index=False
+)
