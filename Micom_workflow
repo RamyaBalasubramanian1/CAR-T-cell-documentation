@@ -426,8 +426,68 @@ scores = MES(results)
 
 print(scores.head())
 print(scores.shape)
+#################################
+#################################
+###this gives overall summary
+###the code after this can give sample by sample breakdown
+#ideally you would want high degree of matching to build an accurate model
+#MICOM defines found_taxa as the number of taxa that matched models in the database, total_taxa as the number supplied after filtering, 
+#found_fraction = found_taxa / total_taxa, and found_abundance_fraction as the fraction of community abundance represented by matched models.
+python - <<'PY'
+import pandas as pd
+
+manifest = pd.read_csv(
+    "elinav_micom_UHGG_genus_manifest.csv"
+)
+
+print("\nSummary:")
+print(
+    manifest[
+        [
+            "found_taxa",
+            "total_taxa",
+            "found_fraction",
+            "found_abundance_fraction"
+        ]
+    ].describe()
+)
+
+print("\nMedian genera detected per sample:")
+print(manifest["total_taxa"].median())
+
+print("\nMedian genera used in MICOM per sample:")
+print(manifest["found_taxa"].median())
+
+print("\nMean fraction of genera matched:")
+print(manifest["found_fraction"].mean())
+
+print("\nMean abundance represented:")
+print(manifest["found_abundance_fraction"].mean())
+PY
 
 scores.to_csv(
     "micom_MES_pfba.csv",
     index=False
 )
+##########################
+##########################
+##breakdown by sample
+python - <<'PY'
+import pandas as pd
+
+manifest = pd.read_csv(
+    "elinav_micom_UHGG_genus_manifest.csv"
+)
+
+per_sample = manifest[
+    [
+        "sample_id",
+        "found_taxa",
+        "total_taxa",
+        "found_fraction",
+        "found_abundance_fraction"
+    ]
+].sort_values("sample_id")
+
+print(per_sample.to_string(index=False))
+PY
