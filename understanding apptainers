@@ -1,0 +1,13 @@
+#apptainer
+simiple model of execution: linux(native) and trhe more complex version would be Emulation:speccy and pssx2
+question to self: is windows powershell a virtual bos that helps me run linux using windows
+container: program and its software environment that can be portable
+##########################
+##########################
+container: is a program and its dependencies in a portable manner and is different form a VM TERMED AS A SIF FILE
+sandbox is also a container
+
+#apptainer build --sandbox *.sif file
+shell to look inside a apptainer interactively as opposed to sandboxe
+exec will run the program from inside the container
+can you combine slurm scripting to run apptainer
