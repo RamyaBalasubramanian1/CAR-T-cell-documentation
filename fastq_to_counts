@@ -1,0 +1,187 @@
+#########################################
+#########################################
+#########################################
+#!/bin/bash
+#SBATCH --error err_fastqc
+#SBATCH --output out_fastqc
+#SBATCH --job-name fastqc
+#SBATCH --nodes=1
+#SBATCH --mem=180G
+#SBATCH --cpus-per-task=2
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+#SBATCH --partition=cpu2025
+#SBATCH --time=3-00:00:00
+module load conda/base
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate fastqc_env
+
+#mkdir -p fastqc_reports_run2
+mkdir -p multiqc_reports
+multiqc trimmed_fastq_run_2 -o multiqc_reports/
+#fastqc -t 8 -o fastqc_reports_run2 /bulk/mccoy_bulk/ramya/larisa_cart_wgs_2026/run_2/*_R1_001.fastq.gz /bulk/mccoy_bulk/ramya/larisa_cart_wgs_2026/run_2/*_R2_001.fastq.gz
+#####################################
+####################################
+#!/bin/bash
+#SBATCH --error err_hostile
+#SBATCH --output out_hostile
+#SBATCH --job-name hostile
+#SBATCH --nodes=1
+#SBATCH --mem=300G
+#SBATCH --cpus-per-task=12
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+#SBATCH --partition=cpu2023
+#SBATCH --time=5-00:00:00
+
+module load conda/base
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate hostile_env
+
+IN_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/trimmed_fastq_run_2"
+OUT_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/hostile_cleaned_run_2"
+
+mkdir -p "$OUT_DIR"
+
+for r1 in "$IN_DIR"/*R1_001_val_1.fq.gz
+do
+    r2="${r1/R1_001_val_1.fq.gz/R2_001_val_2.fq.gz}"
+
+    sample=$(basename "$r1" _R1_val_1.fq.gz)
+
+    echo "Processing sample: $sample"
+    echo "R1: $r1"
+    echo "R2: $r2"
+
+
+    hostile clean \
+        --fastq1 "$r1" \
+        --fastq2 "$r2" \
+        --index human-t2t-hla-argos985 \
+        --threads 12 \
+        --output "$OUT_DIR" \
+        --force \
+        > "$OUT_DIR/${sample}_hostile.json"
+
+    echo "Finished sample: $sample"
+done
+###########################################################
+###########################################################
+#!/bin/bash
+#SBATCH --job-name=metaphlan4
+#SBATCH --output=metaphlan4_%j.out
+#SBATCH --error=metaphlan4_%j.err
+#SBATCH --time=5-00:00:00
+#SBATCH --mem=300G
+#SBATCH --cpus-per-task=16
+#SBATCH --partition=cpu2023
+#SBATCH --mail-type=END,FAIL
+
+set -euo pipefail
+
+source /global/software/conda/miniforge3/etc/profile.d/conda.sh
+conda activate metaphlan411_env
+
+INPUT_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/hostile_cleaned_run_2"
+OUTPUT_DIR="${INPUT_DIR}/metaphlan4_results"
+
+DB_DIR="/work/mccoy_lab/ramya_pd/databases/metaphlan/vOct22"
+INDEX="mpa_vOct22_CHOCOPhlAnSGB_202403"
+
+mkdir -p "${OUTPUT_DIR}/profiles" "${OUTPUT_DIR}/bowtie2"
+
+for R1 in "${INPUT_DIR}"/*_R1_001_val_1.clean_1.fastq.gz; do
+
+    SAMPLE=$(basename "$R1" _R1_001_val_1.clean_1.fastq.gz)
+    R2="${INPUT_DIR}/${SAMPLE}_R2_001_val_2.clean_2.fastq.gz"
+
+    metaphlan "${R1},${R2}" \
+        --input_type fastq \
+        --bowtie2db "$DB_DIR" \
+        --index "$INDEX" \
+        --offline \
+        --nproc "${SLURM_CPUS_PER_TASK}" \
+        --bowtie2out "${OUTPUT_DIR}/bowtie2/${SAMPLE}.bowtie2.bz2" \
+        -o "${OUTPUT_DIR}/profiles/${SAMPLE}_profile.tsv"
+
+done
+##############################################3
+##############################################
+###############################################
+#!/bin/bash
+#SBATCH --job-name=metaphlan4
+#SBATCH --output=metaphlan4_merge.out
+#SBATCH --error=metaphlan4_merge.err
+#SBATCH --time=5-00:00:00
+#SBATCH --mem=100G
+#SBATCH --cpus-per-task=8
+#SBATCH --partition=cpu2023
+#SBATCH --mail-type=END,FAIL
+
+
+merge_metaphlan_tables.py metaphlan4_results/profiles/*_profile.tsv > metaphlan4_merged.tsv
+################################################
+#################################################3
+#!/bin/bash
+#SBATCH --job-name=humann4
+#SBATCH --output=human_parallel.out
+#SBATCH --error=human_parallel.err
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=400G
+#SBATCH --time=5-00:00:00
+#SBATCH --partition=cpu2025
+#SBATCH --array=1-31%4
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+
+set -euo pipefail
+
+source /global/software/conda/miniforge3/etc/profile.d/conda.sh
+conda activate biobakery4
+
+INPUT_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/hostile_cleaned_run_2"
+OUTPUT_DIR="${INPUT_DIR}/humann4_results"
+
+NUCLEOTIDE_DB="/work/mccoy_lab/ramya_pd/databases/humann4/chocophlan"
+PROTEIN_DB="/work/mccoy_lab/ramya_pd/databases/humann4/uniref"
+
+BOWTIE2_DB="/work/mccoy_lab/ramya_pd/databases/metaphlan/vOct22"
+METAPHLAN_INDEX="mpa_vOct22_CHOCOPhlAnSGB_202403"
+
+METAPHLAN_BIN="/home/ramya.balasubramania/.conda/envs/metaphlan411_env/bin"
+
+mkdir -p "${OUTPUT_DIR}/combined_reads" "${OUTPUT_DIR}/results"
+
+mapfile -t R1_FILES < <(
+    find "$INPUT_DIR" -maxdepth 1 -type f \
+        -name '*_R1_001_val_1.clean_1.fastq.gz' | sort
+)
+
+R1="${R1_FILES[$((SLURM_ARRAY_TASK_ID - 1))]}"
+
+SAMPLE=$(basename "$R1" _R1_001_val_1.clean_1.fastq.gz)
+R2="${INPUT_DIR}/${SAMPLE}_R2_001_val_2.clean_2.fastq.gz"
+
+COMBINED="${OUTPUT_DIR}/combined_reads/${SAMPLE}_combined.fastq.gz"
+SAMPLE_OUT="${OUTPUT_DIR}/results/${SAMPLE}"
+
+mkdir -p "$SAMPLE_OUT"
+
+# Concatenate paired-end FASTQ files
+zcat "$R1" "$R2" | gzip -c > "$COMBINED"
+
+# Run HUMAnN 4 with MetaPhlAn 4.1.1
+humann \
+    --input "$COMBINED" \
+    --output "$SAMPLE_OUT" \
+    --output-basename "$SAMPLE" \
+    --nucleotide-database "$NUCLEOTIDE_DB" \
+    --protein-database "$PROTEIN_DB" \
+    --metaphlan "$METAPHLAN_BIN" \
+    --metaphlan-options "-t rel_ab_w_read_stats --bowtie2db $BOWTIE2_DB --index $METAPHLAN_INDEX --offline --nproc ${SLURM_CPUS_PER_TASK}" \
+    --threads "${SLURM_CPUS_PER_TASK}" \
+    --remove-temp-output
+
+rm -f "$COMBINED"
