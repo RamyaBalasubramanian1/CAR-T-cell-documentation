@@ -1,0 +1,41 @@
+#!/bin/bash
+#SBATCH --job-name=cayman_all
+#SBATCH --output=cayman_out
+#SBATCH --error=cayman_err
+#SBATCH --partition=cpu2025
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=200G
+#SBATCH --time=6-00:00:00
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+
+set -euo pipefail
+
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate /work/mccoy_lab/ramya_pd/conda_envs/cayman_env
+
+DB="/work/mccoy_lab/ramya_pd/cayman_db"
+ANNOT="${DB}/annots/GMGC10.human-gut.95nr.no-rare.0.5.percent.prevalence_all_v3_FINAL.csv"
+REF="${DB}/gene_catalogues/GMGC10.human-gut.95nr.0.5.percent.prevalence.fna"
+
+READ_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/hostile_cleaned"
+OUT_DIR="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/cayman_results"
+
+mkdir -p "${OUT_DIR}"
+
+for R1 in "${READ_DIR}"/S_*_R1_val_1.clean_1.fastq.gz; do
+
+    SAMPLE=$(basename "${R1}" _R1_val_1.clean_1.fastq.gz)
+    R2="${READ_DIR}/${SAMPLE}_R2_val_2.clean_2.fastq.gz"
+
+    echo "Running ${SAMPLE}"
+
+    cayman profile \
+        "${ANNOT}" \
+        "${REF}" \
+        -1 "${R1}" \
+        -2 "${R2}" \
+        --out_prefix "${OUT_DIR}/${SAMPLE}" \
+        --cpus_for_alignment "${SLURM_CPUS_PER_TASK}"
+
+done
