@@ -1,0 +1,17 @@
+python - <<'PY'
+import pandas as pd
+
+m = pd.read_csv("micom_species_manifest_agora.csv")
+
+print(
+    m[
+        [
+            "sample_id",
+            "total_taxa",
+            "found_taxa",
+            "found_fraction",
+            "found_abundance_fraction"
+        ]
+    ].to_string(index=False)
+)
+PY
