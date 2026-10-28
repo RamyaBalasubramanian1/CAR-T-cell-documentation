@@ -1,0 +1,104 @@
+#we first identify which species failed check the output file
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat  failed_agora_species.py
+from micom.workflows import load_results
+from micom.interaction import interactions
+
+
+def main():
+
+    results = load_results(
+        "micom_gut_species_agora.zip"
+    )
+
+    taxa = (
+        results.growth_rates["taxon"]
+        .dropna()
+        .unique()
+    )
+
+    failed = []
+
+    print("Number of species:", len(taxa))
+
+    for taxon in taxa:
+
+        print("Testing:", taxon)
+
+        try:
+            x = interactions(
+                results,
+                taxa=[taxon],
+                threads=1
+            )
+
+            print("  OK", x.shape)
+
+        except Exception as e:
+
+            print("  FAILED", repr(e))
+            failed.append(taxon)
+
+    print("\nFailed species:")
+
+    for t in failed:
+        print(t)
+
+
+if __name__ == "__main__":
+    main()
+#when some models cant be built we have to skip them
+(micom_env) [ramya.balasubramania@arc metaphlan_results]$ cat failed_species_using_agora_run1.py
+from micom.workflows import load_results
+from micom.interaction import interactions, summarize_interactions
+
+
+def main():
+
+    results = load_results(
+        "micom_gut_species_agora.zip"
+    )
+
+    taxa = (
+        results.growth_rates["taxon"]
+        .dropna()
+        .unique()
+    )
+
+    failed_taxa = [
+        "Alistipes_onderdonkii",
+        "Eisenbergiella_tayi"
+    ]
+
+    taxa_keep = [
+        t for t in taxa
+        if t not in failed_taxa
+    ]
+
+    print("Total species:", len(taxa))
+    print("Species retained:", len(taxa_keep))
+    print("Species excluded:", len(failed_taxa))
+
+    full = interactions(
+        results,
+        taxa=taxa_keep,
+        threads=8
+    )
+
+    full.to_csv(
+        "micom_all_interactions_pfba_species_agora.csv",
+        index=False
+    )
+
+    summary = summarize_interactions(full)
+
+    summary.to_csv(
+        "micom_interactions_summary_pfba_species_agora.csv",
+        index=False
+    )
+
+    print("\nFull interactions:", full.shape)
+    print("Summary:", summary.shape)
+
+
+if __name__ == "__main__":
+    main()
