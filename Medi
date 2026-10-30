@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --job-name=medi
+#SBATCH --output=medi_out
+#SBATCH --error=medi_err
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=800G
+#SBATCH --time=6-23:00:00
+#SBATCH --partition=cpu2025
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+
+module load conda/base
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate /work/mccoy_lab/ramya_pd/conda_envs/medi_env
+export PATH="/work/mccoy_lab/ramya_pd/software/medi/bin:$PATH"
+cd  /work/mccoy_lab/ramya_pd/software/medi
+
+nextflow run quant.nf \
+    --data_dir /work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/test \
+    --db /work/mccoy_lab/ramya_pd/databases/medi_db \
+    -resume
