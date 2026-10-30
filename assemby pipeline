@@ -1,0 +1,125 @@
+#!/bin/bash
+#SBATCH --job-name=individual_megahit
+#SBATCH --output=individual_assembly_%j.out
+#SBATCH --error=individual_assembly_%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=500G
+#SBATCH --time=7-00:00:00
+#SBATCH --partition=cpu2025
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+
+set -euo pipefail
+
+module load conda/base
+source "$(conda info --base)/etc/profile.d/conda.sh"
+
+conda activate /work/mccoy_lab/ramya_pd/conda_envs/metawrap_env
+
+export PATH="/work/mccoy_lab/ramya_pd/software/metaWRAP/bin:$PATH"
+
+BASE="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS"
+READ_DIR="${BASE}/hostile_cleaned"
+OUT_BASE="${BASE}/metawrap_results/assembly/individual"
+
+mkdir -p "$OUT_BASE"
+
+for READ1 in "${READ_DIR}"/*_R1_val_1.clean_1.fastq; do
+
+    SAMPLE=$(basename "$READ1" "_R1_val_1.clean_1.fastq")
+    READ2="${READ_DIR}/${SAMPLE}_R2_val_2.clean_2.fastq"
+    OUT="${OUT_BASE}/${SAMPLE}"
+
+    [[ -s "$READ2" ]] || {
+        echo "ERROR: Missing or empty R2: $READ2"
+        exit 1
+    }
+
+    metawrap assembly \
+        -1 "$READ1" \
+        -2 "$READ2" \
+        -o "$OUT" \
+        -t "$SLURM_CPUS_PER_TASK" \
+        -m 450 \
+        -l 1000 \
+        --megahit
+
+done
+#################################
+#################################
+#!/bin/bash
+#SBATCH --job-name=individual_binning
+#SBATCH --output=individual_bin_%j.out
+#SBATCH --error=individual_bin_%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=300G
+#SBATCH --time=6-23:00:00
+#SBATCH --partition=cpu2025
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=ramya.balasubramania@ucalgary.ca
+
+set -euo pipefail
+
+module load conda/base
+source "$(conda info --base)/etc/profile.d/conda.sh"
+
+conda activate /work/mccoy_lab/ramya_pd/conda_envs/metawrap_env
+
+export PATH="/work/mccoy_lab/ramya_pd/software/metaWRAP/bin:$PATH"
+
+METAWRAP="/work/mccoy_lab/ramya_pd/software/metaWRAP/bin/metawrap"
+
+ulimit -n 65536
+
+BASE="/work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS"
+
+ASSEMBLY_BASE="${BASE}/metawrap_results/assembly/individual"
+OUTPUT_BASE="${BASE}/metawrap_results/binning/individual"
+PAIR_DIR="${OUTPUT_BASE}/paired_reads"
+
+mkdir -p "$OUTPUT_BASE"
+
+for ASSEMBLY in "${ASSEMBLY_BASE}"/S_*/final_assembly.fasta; do
+
+    SAMPLE=$(basename "$(dirname "$ASSEMBLY")")
+
+    if [[ "$SAMPLE" == "S_35" ]]; then
+        continue
+    fi
+
+    READ1="${PAIR_DIR}/${SAMPLE}_1.fastq"
+    READ2="${PAIR_DIR}/${SAMPLE}_2.fastq"
+
+    OUTPUT_DIR="${OUTPUT_BASE}/${SAMPLE}"
+
+    if [[ ! -s "$READ1" ]]; then
+        echo "Missing R1 for $SAMPLE"
+        continue
+    fi
+
+    if [[ ! -s "$READ2" ]]; then
+        echo "Missing R2 for $SAMPLE"
+        continue
+    fi
+
+    mkdir -p "$OUTPUT_DIR"
+
+    "$METAWRAP" binning \
+        -a "$ASSEMBLY" \
+        -o "$OUTPUT_DIR" \
+        -t "$SLURM_CPUS_PER_TASK" \
+        -m 300 \
+        -l 1500 \
+        --metabat2 \
+        --maxbin2 \
+        --concoct \
+        "$READ1" \
+        "$READ2"
+
+done
+
+conda deactivate
