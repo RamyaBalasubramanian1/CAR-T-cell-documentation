@@ -18,6 +18,6 @@ export PATH="/work/mccoy_lab/ramya_pd/software/medi/bin:$PATH"
 cd  /work/mccoy_lab/ramya_pd/software/medi
 
 nextflow run quant.nf \
-    --data_dir /work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/test \
+    --data_dir /work/mccoy_lab/ramya_pd/larissa_gut_microbiota_WGS/test \ #test contains demultiplexed reads not subjected to host removal and qc
     --db /work/mccoy_lab/ramya_pd/databases/medi_db \
     -resume
